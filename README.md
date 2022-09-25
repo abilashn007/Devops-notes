@@ -1,2 +1,1 @@
-# Devops-notes
-Docker,jenkins &amp; kubernetes notes
+# devops-june-2022

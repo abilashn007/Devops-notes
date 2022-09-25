@@ -1,0 +1,69 @@
+# Homepage deployment
+apiVersion: apps/v1 
+kind: Deployment
+metadata: 
+    name: homepage-deployment
+spec:
+    replicas: 2
+    selector:
+       matchLabels:
+          app: homepage-app
+    template:
+        metadata:
+           labels:
+             app: homepage-app	
+        spec: 
+          containers:
+            - name: homepage-app-container
+              image: harshajain/k8s:homepage-app
+              imagePullPolicy: Always
+              ports:
+               - containerPort: 8080
+
+---
+
+# Frontend deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: fe-deployment
+spec:
+    replicas: 2
+    selector:
+       matchLabels:
+          app: fe-app
+    template:
+        metadata:
+           labels:
+             app: fe-app
+        spec:
+          containers:
+            - name: fe-app-container
+              image: harshajain/k8s:fe-app
+              imagePullPolicy: Always
+              ports:
+               - containerPort: 8080
+
+---
+
+# Backend deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: db-deployment
+spec:
+    replicas: 2
+    selector:
+       matchLabels:
+          app: db-app
+    template:
+        metadata:
+           labels:
+             app: db-app
+        spec:
+          containers:
+            - name: db-app-container
+              image: harshajain/k8s:db-app
+              imagePullPolicy: Always
+              ports:
+               - containerPort: 8080

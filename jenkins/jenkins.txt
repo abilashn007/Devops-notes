@@ -1,0 +1,89 @@
+Groovy script 
+
+Type of pipeline job in Jenkins
+ 
+Scripted pipeline 
+- Traditional way of defining pipeline job.
+- Most of the configuration we need to define manually.
+- All the configuration should be inside the node block. 
+	
+Declarative pipeline 
+- New way of defining pipeline job.
+- Most of the configuration are pre-defined.
+- All the configuration should be inside the pipeline block. 
+- The mandatory components of pipeline will be agent, stages, stage, steps			
+
+Jenkinsfile	
+	- It is the file in which we write all our job configuration in groovy.
+	- In our company we are using declarative pipeline in Jenkinsfile and we are maintaining 
+	  Jenkinsfile through git.	
+
+How to define a pipeline job in Jenkins
+	1. We can add pipeline configuration in 2 ways 
+		a. We write all the configuration inside the pipeline job in job ui only.
+		b. We can write all the configuration in a file called Jenkinsfile and we can add that 
+		   from a SCM/Version control 
+	2. We are using only declarative pipeline type in our company.
+
+Assignment: Install blueocean plugin for pipeline 
+		- Blue Ocean 
+		- Web for Blue ocean 
+		- common API 
+		- Dashboard for Blue Ocean	
+
+
+Agent
+	- An agent is a declarative used to define the execution method for pipeline stages.
+	- agent is the one which tell stages to execute on which node and its executor.
+	- Agent can be specified at two levels 
+				a. pipeline level 
+				b. Stage level
+		
+	Types of agent 
+		any 
+			- This is the default agent, If I wont specify any agent this will be considered.
+			- Runs the pipeline stages on any available node executor.
+			
+		none 
+			-  To define executor for each and every stage declare agent as none at pipeline level.
+			-  Using this we specify Jenkins that agent is controlled at each stage level.
+			-  Defining agent at stage level is mandatory. 
+				
+		label 
+			- we can define agent as label at pipeline to run all the stages of pipeline
+			  on a particular node with label.
+
+How to run a job parallel 
+	- we can run free style job parallel by using "Execute concurrent builds" in general section 
+	
+	Pipeline 
+	- By default pipeline job runs concurrently.
+	- To run stages parallel we need to define the stages inside parallel block.
+
+Environment variable 
+	- env variables cab be declared both at pipeline and stage level.
+		environment {
+			NAME = value
+		}
+	- environment variables can be accessed suing env keyword 
+		env.NAME
+
+Parameters 
+	- parameters cab be declared only at pipeline level.
+		parameters {
+		     string(name: 'BRANCH', description: 'Enter the branch to build', defaultValue: 'main')
+		}
+
+	- Parameters can be accessed suing 'params' keyword 
+		params.NAME
+
+Continue the Jenkins pipeline even if the stage fails
+	- To handle the exception 
+		catch the error 
+		example: catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+ 
+		}	
+
+Docker 
+Kubernetes 
+Terraform - IaC (AWS configuration)	

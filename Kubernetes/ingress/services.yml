@@ -1,0 +1,43 @@
+# ClusterIP Service from homepage app
+# name: home-svc 
+apiVersion: v1
+kind: Service
+metadata:
+  name: home-svc
+spec:
+  selector:
+    app: homepage-app
+  ports:
+  - port: 8100
+    targetPort: 8080
+
+--- 
+
+# ClusterIP Service from frontend app
+# name: fe-svc 
+apiVersion: v1
+kind: Service
+metadata:
+  name: fe-svc
+spec:
+  selector:
+    app: fe-app
+  ports:
+  - port: 8101
+    targetPort: 8080
+
+---
+# ClusterIP Service from backend app
+# name: db-svc
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-svc
+spec:
+  selector:
+    app: db-app
+  ports:
+  - port: 8102
+    targetPort: 8080
+
+

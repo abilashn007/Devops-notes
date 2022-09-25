@@ -1,0 +1,13 @@
+docker run -it -d --rm -v maven_repo:/root/.m2 \
+    -v "$(pwd)":/app -w /app \
+    -p 9999:9999 \
+    --network maven \
+    --name jetty_container maven:3.8.6-openjdk-18-slim mvn jetty:run
+
+docker run -it --rm -v maven_repo:/root/.m2 \
+    -v "$(pwd)":/app -w /app \
+    --network maven maven:3.8.6-openjdk-18-slim mvn clean test 
+
+docker run -it --rm -v maven_repo:/root/.m2 \
+    -v "$(pwd)":/app -w /app \
+    --network maven maven:3.8.6-openjdk-18-slim mvn clean integration-test                
