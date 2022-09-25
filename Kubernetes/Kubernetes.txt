@@ -1124,3 +1124,694 @@ Rolebinding and ClusterRoleBiniding
 		  
 	To check the access 
 		kubectl auth can-i list pods --as=system:serviceaccount:<account_namesapce>:<account_name> 
+
+USER ACCOUNT
+1.	Create a useraccount 
+	sudo useradd -s /bin/bash -d /home/<username>/ -m -G sudo <username>
+
+2.	Create a private key for the above user created:
+	sudo openssl genrsa -out <username>.key 2048
+
+3.	Create a certificate signing request (CSR). CN is the username and O the group.
+sudo openssl req -new -key <username>.key -out <username>.csr -subj "/CN=<username>/O=sudo"
+
+4.	Sign the CSR with the Kubernetes
+Note: We have to use the CA cert and key which are normally in /etc/kubernetes/pki/
+	
+sudo openssl x509 -req -in <username>.csr \
+  	-CA /etc/kubernetes/pki/ca.crt \
+  	-CAkey /etc/kubernetes/pki/ca.key \
+  	-CAcreateserial \
+  	-out <username>.crt -days 500
+
+5.	Create a “.certs” directory where we are going to store the user public and private key.
+sudo mkdir .certs && sudo mv jean.crt jean.key .certs
+
+6.	Now we need to grant all the created files and directories to the user:
+	sudo chown -R <username>: /home/<username>/
+	sudo vi /etc/sudoers and add <username>   ALL=(ALL:ALL)  ALL	
+
+7.	Change user to <username>
+sudo -u <username> bash
+
+8.	Create kubeconfig for <username>
+kubectl config set-credentials <username> \
+  --client-certificate=/home/<username>/.certs/<username>.crt \
+  --client-key=/home/<username>/.certs/<username>.key
+
+9.	Create context for <username> and cluster
+kubectl config set-context <context-name> \
+--cluster=<cluster-name> \
+--user=<username>
+
+10.	Switch the above created context 
+	kubectl config use-context <context-name>	
+
+11.	Edit the file $HOME/.kube/config  to Add certificate-authority-data: and server: keys under cluster. 
+	apiVersion: v1
+clusters:
+- cluster:
+   certificate-authority-data: {get from /etc/kubernetes/admin.conf}
+   server: {get from /etc/kubernetes/admin.conf}
+  name: kubernetes
+. . . . 
+12.	Check the setup by running the command 
+ 	Kubectl get nodes/pods
+	Note: If “Error from server (Forbidden):” then create the required 
+ roles/clusterRoles for the user <username>
+
+
+How to configure kubectl from outside or from any other machine using service account 
+
+1. Install kubectl on Linux
+STEP1: curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl STEP2: chmod +x ./kubectl
+STEP3: sudo mv ./kubectl /usr/local/bin/kubectl
+To verify installation: kubectl version --client
+2. Setting Kubernetes Cluster parameters
+kubectl config set-cluster <cluster_name> --server=https://<IPorDNS>:<Port> --insecure-skip-tls- verify=<true/false>
+Note: The above command will create the basic config file $HOME/.kube/config
+To know the <IP>:<PORT>: kubectl config view
+To check complete cluster activity: kubectl cluster-info (or) kubectl cluster-info dump
+3. Adding the token of the user to the context
+STEP 1: Copy the secret service account token from the cluster to connect
+Kubectl describe serviceaccount <account_name>
+STEP 2: kubectl config set-credentials <context-name> --token=<copied token>
+4. Creating the Serviceaccount as User
+kubectl config set-context <context-name> --cluster=<cluster_name> --user=<account_name>
+5. Switch the Context to your newly created user-context
+kubectl config use-context <context-name>
+We can have multiple contexts with different cluster service accounts. To list contexts: kubectl config get-contexts
+Best tools
+1. To easy switch between context - kubectx
+Get all contexts: kubectx
+Switch context: kubectx <context-name>
+2. To easy set namespaces default – kubens Get all contexts: kubens
+Switch context: kubens <context-name>
+
+
+How to create a pod on a particular worker pod 
+	1. Node selector 
+		- Node selector is a way of binding pod to a worker node or nodes based on the 
+		  node labels.
+		- We cannot use any logical expresions type of selection.  
+	
+		create a label to worker node 
+			kubectl label node <node_name> <key>=<value>
+			
+		Use nodeSelector with the same label created to create pods in the same worker node
+			apiVersion: apps/v1
+			kind: Deployment
+			metadata:
+			  name: nginx-deployment
+			spec:
+			  replicas: 6
+			  selector:
+				matchLabels:
+				  app: ipapp
+			  template:
+				metadata:
+				  labels:
+					app: ipapp
+				spec:
+				  nodeSelector:
+					<key>: <value>
+				  containers:
+				  - name: nginx
+					image: nginx:latest
+					ports:
+					- containerPort: 80
+					
+	2. Node afinity and anti-afinity (Inter-pod affinity)
+		
+		Node affinity 
+			- nodeselector with logical expresions is affinity.
+			- using node affinity we can spread pod across worker nodes based on 
+			  CPU and RAM capacity(memory-intense mode), Availabilty zone (HA mode).
+			
+			- requiredDuringSchedulingIgnoredDuringExecution	
+				The scheduler can't schedule the pod untill unless the rule is met.
+				
+			- preferredDuringSchedulingIgnoredDuringExecution
+				The scheduler tries to fina a node matching the rule, If a matching node 
+				is not available then scheduler still schedules the pod in normal way.
+				
+			- IgnoredDuringExecution
+				If the node labels are changed after the scheduling of pod still the pod 
+                continues to run. 	
+			
+			spec: 
+				containers: 
+						........
+						
+				affinity: 
+					nodeAffinity:
+					  requiredDuringSchedulingIgnoredDuringExecution:
+						nodeSelectorTerms:
+						- matchExpressions:
+						  - key: kubernetes.io/os
+							operator: In
+							values:
+							- linux
+					  preferredDuringSchedulingIgnoredDuringExecution:
+					  - weight: 1
+						preference:
+						  matchExpressions:
+						  - key: label-1
+							operator: In
+							values:
+							- key-1
+					  - weight: 50
+						preference:
+						  matchExpressions:
+						  - key: label-2
+							operator: In
+							values:
+							- key-2
+				
+		node Anti-affinity (Inter-pod Affinity)
+			- This is used to define whether a given pod should or should not be 
+			  scheduled on a particular node based on conditional labels.	
+			
+			spec: 
+				containers: 
+						........
+						
+				affinity: 
+					nodeAntiAffinity:
+					  requiredDuringSchedulingIgnoredDuringExecution:
+						IfNotPresent:
+						- matchExpressions:
+						  - key: <label_key>
+							operator: In
+							values:
+							- <label_value>
+	
+	3. Taints and Tolerations
+		- Taints are used to repel the pods from a specific node.
+		- we can apply taints to worker nodes which tell scheduler to repel all the pods 
+		  except those pods which contains tolerations for the taint.
+		- 2 operators we can use Equal and Exists (If we use Exists, no value required)
+		
+		- We can check the effects also 
+			1) NoSchedule - This taint means unless a pod with toleration the scheduler 
+				will never schedule the pod.
+			2) NoExecute - To delete all the pods except some reuired pods we can use this.
+
+			To taint a worker node
+				kubectl taint nodes <node_name> <taint_key>=<taint_value>:<taint_effect>
+			
+			To delete a taint from worker node
+				(Put a "-" at the end of the command) 
+				kubectl taint nodes <node_name> <taint_key>=<taint_value>:<taint_effect>-
+		
+		
+			spec: 
+				tolerations:
+				  - key: env
+					value: test
+					effect: NoSchedule
+					operator: Equal
+				containers:
+				  - name: nginx
+					image: nginx:latest
+					ports:
+					- containerPort: 80
+
+
+
+network policy
+	- By default, In k8s any pod can communicate with each other within the cluster across 
+	  the different namespaces and worker node.
+	- The deafault netwrok of k8s is of open stack model this opens a huge risk for potential 
+	  security issues.
+    - We can use network polices to apply Deny all for the cluster and we can write polices 
+	  to allow only required requests to cluster.
+	- Network polices is defined for ingress and egress.
+	
+		apiVersion: networking.k8s.io/v1
+		kind: NetworkPolicy
+		metadata:
+			name: default-deny-all
+		spec: 
+		    podSelector: {} 
+			policyTypes: 
+			    - Ingress
+	
+	
+		apiVersion: networking.k8s.io/v1
+		kind: NetworkPolicy
+		metadata:
+			name: nginx-pod 
+		spec: 
+		    podSelector: 
+				matchLables:
+				     app: nginx
+			policyTypes: 
+			    - Ingress
+			ingress:
+				- from: 
+				   - podSelector: 
+				       matchLabels: 
+					       app: backend
+		          ports: 
+                    - port: 80
+                      protocol: TCP  					
+		
+	calico 
+		- Calico is created by a company called "Tigre". 
+		- Tigre is support a wide range od CNI for kubernetes only.
+		- Using this CNI plugin we can extend the usage of network policies and we can improve 
+		  the security over network.	
+		- Using calico we can define dynamic network policies susch auto calculated from many 
+		  sources of data is possible.
+		- multiple port mapping is supported in calico
+
+
+
+Resource quotas and limits 
+	How to limit the number of pods to a namepsace ?
+	how to limit the memory to a pod ?
+	
+	Count quota 
+		- This quota is used to limit the max number of obejcts that we can have 
+		  in a namepsace.
+		syntax: 
+			count/<resource>.<group> for resources from non-core groups
+			count/<resource> for resources from the core group
+			
+		Below are the list of resources we can have count quota 
+			count/pods
+			count/persistentvolumeclaims
+			count/services
+			count/secrets
+			count/configmaps
+			count/replicationcontrollers
+			count/deployments.apps
+			count/replicasets.apps
+			count/statefulsets.apps
+			count/jobs.batch
+			count/cronjobs.batch
+			
+		ex: 
+			apiVersion: v1
+			kind: ResourceQuota
+			metadata:
+			   name: pod-count-quota
+			spec:
+			  hard:
+				 scount/pods: "2"
+				 
+	Quota on CPU/RAM/Disk
+		apiVersion: v1
+		kind: ResourceQuota
+		metadata:
+		   name: resource-quota
+		spec:
+		  hard:
+			 request.cpu: "0.2"
+			 limits.cpu: "0.8"
+			 
+					0r 
+					
+			 request.memory: "512Mi"
+			 limits.memory: "800Mi"	
+		
+		CPU 
+		  - 1 cpu, in k8s 1 is equal to 100% to 1 cpu/core and 1 hyperthread.
+		  - if not specified by deafult k8s allocates 0.5 cpu to a pod.
+	
+				we can have 0.1, 0.2, ..... 0.9, 1  
+				
+				0.1 cpu = 100m = 1 hundred milli cpu
+		
+		Memory 
+			- In k8s resources are measured in bytes. 
+			- The memory should in simple integer value (Fixed point number).
+			- Representation Ki,Mi,Gi,Ti,Pi,Ei
+					
+			apiVersion: v1
+			kind: Pod
+			metadata:
+			  name: nginx-deployment-new
+			spec:
+			    containers:
+				  - name: nginx
+					image: nginx:1.14.2
+					ports:
+					- containerPort: 80	
+				resources:
+					requests: 
+						memory: "100Mi"
+						cpu: 0.5
+					limits:
+						memory: "250Mi"
+						cpu: 1
+
+
+Deployment stratergies.	
+	Rolling Update 
+		- By default deployment in k8s uses rolling update stratergy which means if I want use 
+		  this stratergy I don'nt need to specify any parameters in spec file. 
+		- Example: By default k8s automatically decides the percentage of keeing available pods.
+		  usually one out 4 it updates. 
+		
+		- To overrride the default behaviour 
+			spec: 
+				stratergy: 
+					type: RollingUpdate 
+					rollingUpdate: 
+						maxSurge: 1
+						maxUnavailable: 25%
+			
+	Recreate 
+		The Recreate stratergy will bring all the old pods down immediately and the creates 
+		new updated pods to match the replica count.
+			spec: 
+				stratergy: 
+					type: Recreate 
+					
+	Blue/Green deployment
+		- We keep 2 sets of similar environment in which one will be live called blue  
+		  environment and the one which is not live is called as green. 
+		- we update the new changes to green environment first which is not live and we 
+		  swap/ redirect the traffic from blue to green environment.
+		- Finally current green environment with new updates we rename it as blue and  
+		  the current blue environment is renamed as green. 
+	
+	Canary release 
+		- A canary release is a software testing technique used to reduce the risk of 
+		  introducing a new software version into production by gradually rolling out 
+		  the change to a small subgroup of users, before rolling it out to the entire 
+		  platform/infrastructure.
+		  
+
+Multi master cluster 	
+	What is the size of the k8s cluster ?
+		- we are manitaining different cluster for different environment
+		- we have one big cluster and environments are maintained through namepsaces
+		- always the count of master nodes should a odd number 
+		- we are using loadbalancer / multiple people are working they may dd the worker nodes 
+		  so I never kept exact count of nodes but on average we have 20 to 25 worker nodes.
+	
+	Why always the number of master nodes is odd number ?
+		- Based on Quoram calculation (n/2+1) we get same quoram failure rate for odd number 
+		  and its next even number of nodes, so it is better to use odd number nodes instead 
+		  of even number and we start with minimum 3 master nodes.
+		- Always tell odd number of nodes (any odd number starting with 3, 5, 7, 9)
+		- Based on the quorum value we choose only odd number of nodes starting with 3 to 
+		  achive better fault tollerance cluster.
+
+
+pod eviction 
+
+	- Kubernetes evict pods if the node resources are running out such as cpu, RAM and storage.
+	- Pod with failed state will be evicted first because they may not running but could still 
+	  be using cluster resources and then k8s runs decision making based.
+	  
+	  Kubernetes looks at two different reasons to make eviction decision: 
+			1. QoS (Quality of Service) class. 
+				For every container in the pod:
+				  - There must be a memory limit and a memory request.
+				  - The memory limit must equal the memory request.
+				  - There must be a CPU limit and a CPU request.
+				  - The CPU limit must equal the CPU request.
+			2. Priority class.
+				- A pod's priority class defines the importance of the pod compared to other 
+				  pods running in the cluster.
+				- based on the priority low to high pods will be evicted.  
+
+
+		  - Cluster autoscaler tools are mostly provided by public cloud providers.	
+
+Ingress
+	Cloud loadbalancer are costly as most of the times billing will be per requests so 
+	to avoid this the kubernetes solution is Ingress, we can run an external software based 
+	load balancer in our cluster.
+		
+	1. Ingress controller 
+		- This controller is used to execute the ingress resources which contains 
+		  routing rules and brings the external traffic based on routing rules to the 
+		  internal service.	
+	    - This controller will automatically monitors the exiting resources and also 
+		  identifies new ingress resources.
+		- This will be a third party controllers (tools) which we need to install it 
+          for one time in our cluster as controller.
+		- We are using nginx as ingress controller.
+
+	2. Ingress resources 
+		- In k8s Ingress resource is type of object which is used to define routing rules 
+		  based on path of incoming traffic to internal cluster service.
+		- api for ingress resource networking.k8s.io/v1 	
+		- Ingress can be used for revers proxy means to expose multiple services under same IP.
+		- Ingress can be used to apply ssl/tls certificates.
+
+		apiVersion: networking.k8s.io/v1	
+		kind: Ingress
+		metadata: 
+            name: my-ingress 
+        spec: 
+			rules: 
+				- host: example.com
+				    http: 
+					   paths: 
+					     - path: /
+						   backend
+				              serviceName: my-svc
+							  servicePort: 80
+						 - path: /login
+						   backend
+				              serviceName: my-login
+							  servicePort: 8090 	  
+							  
+		Note: / 	  -	 means the request from "http://www.example.com"
+			  /login  -	 means the request from "http://www.example.com/login"
+			  
+			  serviceName should be same as the name of the service metadata.
+
+
+- The main function of a job is to create one or more pods and tracks the success 
+	  status of pods.
+	- Jobs ensure that the specified number of pods is completed successfully and 
+	  when the job is completed pods go to the shutdown state and Job goes to completed state. 
+    - Mainly we use jobs to run pod temporarily till the task is completed and to run 
+	  tasks parallely.	
+	  
+	  apiVersion: batch/v1
+	  kind: Job
+	  metadata:
+	    name: my-job
+	  spec:
+	    template:
+	  	spec:
+	  	  containers:
+	  	  - name: busybox
+	  		image: busybox
+	  		command: ["echo", "This is first job"]
+	  	  restartPolicy: Never
+
+	restartPolicy 
+		- This is applied to pod not for the Job.
+		- There are values,
+			1. Always 
+			   - This is the default restart policy containers will always be restarted if they stop, 
+			     even if they completed successfully. 
+			   - This policy should be used for applications that always needs to be running.
+			2. OnFailure
+			   	  - will always restart containers only if the container process exits with an error code.
+				  - If the container is determined to be unhealthy by a liveness probe it will be restarted.
+				  - we use this policy for applications that need to run successfully & then stop.
+			3. Never
+				  - The pod’s containers will never be restarted, even if the container exits with error code 
+				    or a liveness probe fails. 
+	The different type of jobs or common parameters are,
+	
+	Completions
+		- This is the number of times the job to run. default is 1.
+		- If, completions is 5 then job will run 5 times means 5 pods.
+	  apiVersion: batch/v1
+	  kind: Job
+	  metadata:
+	    name: my-job
+	  spec:
+	  completions: 5
+	    template:
+	  	spec:
+	  	  containers:
+	  	  - name: busybox
+	  		image: busybox
+	  		command: ["echo", "This is first job"]
+	  	  restartPolicy: Never	
+
+	parallelism
+		- By default jobs run serialy so to run jobs parallely we need to use the parallelism.
+		- parallelism is used to set the number of job that need to run prallely.
+		
+	  apiVersion: batch/v1
+	  kind: Job
+	  metadata:
+	    name: my-job
+	  spec:
+	  completions: 5
+	  parallelism: 2
+	    template:
+	  	spec:
+	  	  containers:
+	  	  - name: busybox
+	  		image: busybox
+	  		command: ["echo", "This is first job"]
+	  	  restartPolicy: Never
+
+	backoffLimit
+		- If the container is failing for some reason which affects the completion the job,
+		  then still job creates more pods one after another until it succeeds which will 
+		  simply put a load on the cluster, in this case backoffLimit is used.
+		-  backoffLimit limit ensure the number pods to limit after failure.
+		- backoffLimit: 2, once pods fails for 2 times it won’t create more pods.
+	  
+	  apiVersion: batch/v1
+	  kind: Job
+	  metadata:
+	    name: my-job
+	  spec:
+	  backoffLimit: 2
+	    template:
+	  	spec:
+	  	  containers:
+	  	  - name: busybox
+	  		image: busybox
+	  		command: ["sleep", "60"]
+	  	  restartPolicy: Never	
+
+	activeDeadlineSecond
+		- This is used to set the execution time for pod and if pod takes more than this 
+		  deadline time then pods will be terminated automatically.
+
+	  apiVersion: batch/v1
+	  kind: Job
+	  metadata:
+	    name: my-job
+	  spec:
+	  activeDeadlineSecond: 20
+	    template:
+	  	spec:
+	  	  containers:
+	  	  - name: busybox
+	  		image: busybox
+	  		command: ["sleep", "60"]
+	  	  restartPolicy: Never
+		  
+	Scheduled / CronJob
+		apiVersion: batch/v1
+		kind: CronJob
+		metadata:
+		  name: hello
+		spec:
+		  schedule: "* * * * *"
+		  jobTemplate:
+			spec:
+			  template:
+				spec:
+				  containers:
+				  - name: hello
+					image: busybox:1.28
+					imagePullPolicy: IfNotPresent
+					command:
+					- /bin/sh
+					- -c
+					- date; echo Hello from the Kubernetes cluster
+				  restartPolicy: OnFailure
+		
+		1. SuccessfulJobHistoryLimit and FailedJobHistoryLimit
+			apiVersion: batch/v1
+			kind: CronJob
+			metadata:
+			  name: hello
+			spec:
+			  schedule: "* * * * *"
+			  successfulJobHistoryLimit: 2
+			  failedJobHistoryLimit: 1
+			  jobTemplate:
+				spec:
+				  template:
+					spec:
+					  containers:
+					  - name: hello
+						image: busybox:1.28
+						imagePullPolicy: IfNotPresent
+						command:
+						- /bin/sh
+						- -c
+						- date; echo Hello from the Kubernetes cluster
+					  restartPolicy: OnFailure
+
+
+k8s AutoScale			
+	Horizontal autoscaler 
+		Horizontal Pod Auto-Scaler (HPA)
+			- HPA is used to automatically scale the number of pods based on deployments, replicasets, 
+			  statefulsets or other objects, based on CPU, Memory threshold.
+			- Automatic scaling of the horizontal pod does not apply to objects that cannot be scaled.
+			  ex: DaemonSets.
+			- We need metric server as a soruce for autoscalling.
+
+			Metric server 
+				- Metrics Server collects resource metrics from Kubelets and exposes them in Kubernetes 
+				  API server through Metrics API for use by Horizontal Pod Autoscaler and Vertical Pod Autoscaler.
+				- kubectl top command use Metrics API to list the resource utilization of all pods. 
+				- Metrics Server is not meant for non-autoscaling purposes like we wont forward these metrics 
+				  data to monitoring tools. 
+				  
+			apiVersion: autoscaling/v2beta2
+			kind: HorizontalPodAutoscaler
+			metadata:
+			  name: php-apache-hps
+			spec:
+			  scaleTargetRef:
+				apiVersion: apps/v1
+				kind: Deployment
+				name: php-apache
+			  minReplicas: 1
+			  maxReplicas: 10
+			  metrics:
+			  - type: Resource
+				resource:
+				  name: cpu
+				  target:
+					type: Utilization
+					averageUtilization: 50 
+					
+				---------------- or ----------------
+				
+			kubectl autoscale deployment php-apache — cpu-percent=50 — min=1 — max=10		
+			
+			To list HPA 
+				kubectl get hpa
+			
+			
+		Vertical Pod Auto-Scaler (VPA)	   
+		    - vpa automatically adjusts the CPU and Memory attributes for your Pods.
+			- basically vpa will recreate your pod with the suitable CPU and Memory attributes.
+			- when we describe vpa, it will show recommendations for the Memory/CPU requests, Limits and it can also automatically 
+			  update the limits.
+		  
+		apiVersion: autoscaling.k8s.io/v1
+		kind: VerticalPodAutoscaler
+		metadata:
+		  name: my-app-vpa
+		spec:
+		  targetRef:
+			apiVersion: "apps/v1"
+			kind:       Deployment
+			name:       my-app
+		  updatePolicy:
+			updateMode: "Auto"  
+			
+			
+		Horizontal / Vertical Cluster Auto-Scaler		
+		  - Cluster Autoscaler is a tool that automatically adjusts the size of the Kubernetes 
+			cluster when one of the following conditions is true:
+				1. some pods failed to run in the cluster due to insufficient resources,
+				2. some nodes in the cluster that have been overloaded for an 
+				   extended period and their pods can be placed on other existing nodes.
+				   
+		  - Cluster autoscaler tools are mostly provided by public cloud providers.	
